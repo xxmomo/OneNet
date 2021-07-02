@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## OneNet: Towards End-to-End One-Stage Object Detection
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -106,3 +107,7 @@ If you use OneNet in your research or wish to refer to the baseline results publ
 }
 
 ```
+=======
+# OneNet
+修改onenet变成旋转检测
+>>>>>>> origin/main
