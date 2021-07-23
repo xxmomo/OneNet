@@ -18,6 +18,8 @@ from .util.misc import (NestedTensor, nested_tensor_from_tensor_list,
 from .util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou, iou_rotate_calculate
 
 from scipy.optimize import linear_sum_assignment
+import cv2 
+import numpy as np
 
 
 class SetCriterion(nn.Module):
@@ -221,7 +223,7 @@ class MinCostMatcher(nn.Module):
         indices = []
 
         for i in range(bs):
-            tgt_ids = targets[i]["labels"] 
+            tgt_ids = targets[i]["labels"] -1
             print("tgt_ids", tgt_ids)  # 形状是单个元素的tensor
 
             if tgt_ids.shape[0] == 0:
@@ -229,13 +231,14 @@ class MinCostMatcher(nn.Module):
                                torch.as_tensor([]).to(batch_out_prob)))
                 continue
 
-            tgt_bbox = targets[i]["boxes_xyxy"]
-            # print("tgt_bbox:", tgt_bbox)
+            tgt_bbox = targets[i]["boxes_xyxy"] #最后一维是角度不是弧度
+            print("tgt_bbox:", tgt_bbox)
             out_prob = batch_out_prob[i]
             out_bbox = batch_out_bbox[i]
             # print("out_bbox:", out_bbox)
-            print("out_bbox_shape:", out_bbox.shape)
-
+            # print("out_bbox_shape:", out_bbox.shape)
+            # print("tgt_bbox_shape:", tgt_bbox.shape) 
+            
             # Compute the classification cost.
             alpha = self.focal_loss_alpha
             gamma = self.focal_loss_gamma
@@ -247,24 +250,39 @@ class MinCostMatcher(nn.Module):
             # unsqueeze(0)在位置0加一个维度，repeat分别在每个维度乘以相应倍数，第0维成w*h倍数
             image_size_out = targets[i]["image_size_xyxy"].unsqueeze(0).repeat(h * w, 1)
             # print("image_size_out:", image_size_out)
-            print("image_size_out_shape:", image_size_out.shape)
+            # print("image_size_out_shape:", image_size_out.shape)
             image_size_tgt = targets[i]["image_size_xyxy_tgt"]
             # print("image_size_tgt:", image_size_out)
-            print("image_size_tgt_shape:", image_size_out.shape)
-
-            # tgt_bbox_xyxy = tgt_bbox[:, 0:4]
-            out_bbox_ = out_bbox / image_size_out  # image_size_out是带角度的五个输出
+            # print("image_size_tgt_shape:", image_size_out.shape)
             print("out_bbox",out_bbox)
+            out_bbox_ = out_bbox / image_size_out  # image_size_out是带角度的五个输出
+            
             tgt_bbox_ = tgt_bbox / image_size_tgt
             cost_bbox = torch.cdist(out_bbox_, tgt_bbox_, p=1)
 
-            # Compute the giou cost betwen boxes
+            # ##Compute the giou cost betwen boxes
             # origin giou
             # cost_giou = -generalized_box_iou(out_bbox, tgt_bbox)
 
-            # rotate boxes iou
-            cost_giou = -iou_rotate_calculate(out_bbox, tgt_bbox)
-
+            # ##rotate boxes iou by xx
+            # print('type(tgt_bbox):',type(tgt_bbox)) #torch.Tensor
+            # tgt_bbox_trans =[]
+            # out_bbox_trans=[]
+            # tgt_bbox=tgt_bbox.cpu().numpy()
+            # out_bbox=out_bbox.cpu().numpy()
+            # for line in tgt_bbox:
+            #     a=[[line[0],line[1]],[line[2],line[3]],line[4]]
+            #     tgt_bbox_array=cv2.boxPoints(np.array(a))
+            #     tgt_bbox_trans.append(tgt_bbox_array)
+            # for line in out_bbox:
+            #     b=[[line[0],line[1]],[line[2],line[3]],line[4]]
+            #     out_bbox_array=cv2.boxPoints(np.array(b))
+            #     out_bbox_trans.append(out_bbox_array)
+            # print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+            # print('tgt_bbox_trans:',tgt_bbox_trans)
+            # # print('out_bbox_array:',out_bbox.shape)
+            # cost_giou = -iou_rotate_calculate(np.array(out_bbox_trans), np.array(tgt_bbox_trans))
+            cost_giou = -iou_rotate_calculate((out_bbox.cpu().numpy()), (tgt_bbox.cpu().numpy()))
             # Final cost matrix
             C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
 

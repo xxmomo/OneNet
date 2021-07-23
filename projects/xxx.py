@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+import cv2
 # def box_xyxy_to_cxcywh(x):
 #     y = x[0:3]
 #     x0, y0, x1, y1 = y.unbind(-1)
@@ -35,6 +37,26 @@ import torch
 
 # locations = locations.reshape(h, w, 2).permute(2, 0, 1)
 # print(locations)
-r1 = [[1.1, 1.1], [2, 2], [3, 3]]
-temp1 = [ [int(i[0]),int(i[1])] for i in r1]
-print(temp1)
+# r1 = [[1.1, 1.1], [2, 2], [3, 3]]
+# temp1 = [ [int(i[0]),int(i[1])] for i in r1]
+# print(temp1)
+
+# pred_ltrb = torch.ones(8,4,2,2)
+# print(pred_ltrb)
+# pred_boxes = torch.zeros_like(pred_ltrb)
+# print(pred_boxes.shape)
+# pred_boxes = pred_boxes.repeat([1, 2, 1, 1])
+# print(pred_boxes.shape)
+
+x = np.array([[546.448, 136.192, 100.7859, 30.172728, -18.778032],
+[1, 2, 19, 38, -132]])
+# x=np.array([[1.,2],[3,4],[5,6],[7,8]])
+# xx=cv2.minAreaRect(x)
+# print('xx',xx)
+result=[]
+for line in x:
+    b=((line[0],line[1]),(line[2],line[3]),line[4])
+    result.append(b)
+
+# y = cv2.boxPoints(x)
+print(result)

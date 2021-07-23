@@ -14,7 +14,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from torch import nn
 
-from detectron2.layers import ShapeSpec,batched_nms
+from detectron2.layers import ShapeSpec, batched_nms
 from detectron2.modeling import META_ARCH_REGISTRY, build_backbone, detector_postprocess
 from detectron2.modeling.roi_heads import build_roi_heads
 
@@ -24,10 +24,10 @@ from fvcore.nn import giou_loss, smooth_l1_loss
 
 from .loss import SetCriterion, MinCostMatcher
 from .head import Head
-from .util.box_ops import box_cxcywh_to_xyxy, box_xyxy_to_cxcywh
+from .util.box_ops import box_cxcywh_to_xyxy, box_xyxy_to_cxcywhtheta
 from .util.misc import (NestedTensor, nested_tensor_from_tensor_list,
-                       accuracy, get_world_size, interpolate,
-                       is_dist_avail_and_initialized)
+                        accuracy, get_world_size, interpolate,
+                        is_dist_avail_and_initialized)
 
 __all__ = ["OneNet"]
 
@@ -42,7 +42,7 @@ class OneNet(nn.Module):
         super().__init__()
 
         self.device = torch.device(cfg.MODEL.DEVICE)
-        
+
         self.nms = cfg.MODEL.OneNet.NMS
         self.in_features = cfg.MODEL.OneNet.IN_FEATURES
         self.num_classes = cfg.MODEL.OneNet.NUM_CLASSES
@@ -51,7 +51,7 @@ class OneNet(nn.Module):
         # Build Backbone.
         self.backbone = build_backbone(cfg)
         self.size_divisibility = self.backbone.size_divisibility
-        
+
         # Build Head.
         self.head = Head(cfg=cfg, backbone_shape=self.backbone.output_shape())
 
@@ -62,9 +62,9 @@ class OneNet(nn.Module):
 
         # Build Criterion.
         matcher = MinCostMatcher(cfg=cfg,
-                                   cost_class=class_weight, 
-                                   cost_bbox=l1_weight, 
-                                   cost_giou=giou_weight)
+                                 cost_class=class_weight,
+                                 cost_bbox=l1_weight,
+                                 cost_giou=giou_weight)
         weight_dict = {"loss_ce": class_weight, "loss_bbox": l1_weight, "loss_giou": giou_weight}
 
         losses = ["labels", "boxes"]
@@ -79,7 +79,6 @@ class OneNet(nn.Module):
         pixel_std = torch.Tensor(cfg.MODEL.PIXEL_STD).to(self.device).view(3, 1, 1)
         self.normalizer = lambda x: (x - pixel_mean) / pixel_std
         self.to(self.device)
-
 
     def forward(self, batched_inputs):
         """
@@ -97,34 +96,36 @@ class OneNet(nn.Module):
                   See :meth:`postprocess` for details.
         """
         # images, images_whwh = self.preprocess_image(batched_inputs) #Onenet原始
-        images = self.preprocess_image(batched_inputs) #xx写
+        images = self.preprocess_image(batched_inputs)  # xx写
         if isinstance(images, (list, torch.Tensor)):
             images = nested_tensor_from_tensor_list(images)
 
         # Feature Extraction.
         src = self.backbone(images.tensor)
-        features = list()        
+        features = list()
         for f in self.in_features:
             feature = src[f]
             features.append(feature)
 
         # Cls & Reg Prediction.
         outputs_class, outputs_coord = self.head(features)
-        
+
         output = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
         # print("output:" , output)
 
         if self.training:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+            # print("gt_instances",gt_instances)
             targets = self.prepare_targets(gt_instances)
-            # print("targets:" , targets)
+            print("targets:", targets)
+            # print('targets.shape:',targets.shape) # list没有shape
             loss_dict = self.criterion(output, targets)
-            
+
             weight_dict = self.criterion.weight_dict
             for k in loss_dict.keys():
                 if k in weight_dict:
                     loss_dict[k] *= weight_dict[k]
-            
+
             return loss_dict
 
         else:
@@ -138,20 +139,22 @@ class OneNet(nn.Module):
                 width = input_per_image.get("width", image_size[1])
                 r = detector_postprocess(results_per_image, height, width)
                 processed_results.append({"instances": r})
-            
+
             return processed_results
 
     def prepare_targets(self, targets):
         new_targets = []
         for targets_per_image in targets:
             target = {}
-            h, w = targets_per_image.image_size
+            h, w = targets_per_image.image_size  #图片的尺寸w、h
             # theta = targets_per_image.tensor(-1)
-            image_size_xyxy = torch.as_tensor([w, h, w, h, 1], dtype=torch.float, device=self.device) #归一化
+            image_size_xyxy = torch.as_tensor(
+                [w, h, w, h, 1], dtype=torch.float, device=self.device)  # 归一化 xx改
             gt_classes = targets_per_image.gt_classes
+            print('targets_per_image.gt_boxes.tensor',targets_per_image.gt_boxes.tensor)
             gt_boxes = targets_per_image.gt_boxes.tensor / image_size_xyxy
             # print(gt_boxes)
-            gt_boxes = box_xyxy_to_cxcywh(gt_boxes) #这里有问题
+            # gt_boxes = box_xyxy_to_cxcywhtheta(gt_boxes)  # onenet原来有，xx删除
             # gt_boxes = math.radians(gt_boxes[:,-1]) #如果角度是度数的话转成弧度，就需要这一步
             target["labels"] = gt_classes.to(self.device)
             target["boxes"] = gt_boxes.to(self.device)
@@ -176,32 +179,32 @@ class OneNet(nn.Module):
         """
         box_cls = _box_cls.flatten(2)
         box_pred = _box_pred.flatten(2)
-        
+
         assert len(box_cls) == len(image_sizes)
         results = []
-        
+
         scores = torch.sigmoid(box_cls)
 
         for i, (scores_per_image, box_pred_per_image, image_size) in enumerate(zip(
                 scores, box_pred, image_sizes
         )):
             result = Instances(image_size)
-            
+
             # refer to https://github.com/FateScript/CenterNet-better
             topk_score_cat, topk_inds_cat = torch.topk(scores_per_image, k=self.num_boxes)
             topk_score, topk_inds = torch.topk(topk_score_cat.reshape(-1), k=self.num_boxes)
             topk_clses = topk_inds // self.num_boxes
             scores_per_image = topk_score
             labels_per_image = topk_clses
-            
+
             topk_box_cat = box_pred_per_image[:, topk_inds_cat.reshape(-1)]
             topk_box = topk_box_cat[:, topk_inds]
             box_pred_per_image = topk_box.transpose(0, 1)
-            
+
             if self.nms:
-                keep = batched_nms(box_pred_per_image, 
-                                   scores_per_image, 
-                                   labels_per_image, 
+                keep = batched_nms(box_pred_per_image,
+                                   scores_per_image,
+                                   labels_per_image,
                                    0.5)
                 box_pred_per_image = box_pred_per_image[keep]
                 scores_per_image = scores_per_image[keep]
@@ -214,7 +217,7 @@ class OneNet(nn.Module):
 
         return results
 
-#Onenet的
+# Onenet的
 #     def preprocess_image(self, batched_inputs):
 #         """
 #         Normalize, pad and batch the input images.
@@ -229,8 +232,9 @@ class OneNet(nn.Module):
 #             h, w = bi["image"].shape[-2:]
 #             images_whwh.append(torch.tensor([w, h, w, h], dtype=torch.float32, device=self.device))
 #         images_whwh = torch.stack(images_whwh)
+#         return images, images_whw
 
-#自己写的
+# 自己写的
     def preprocess_image(self, batched_inputs):
         """
         Normalize, pad and batch the input images.
